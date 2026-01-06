@@ -42,14 +42,26 @@ const App: React.FC = () => {
   const [query, setQuery] = useState('');
   const [loading, setLoading] = useState(false);
   const [weatherLoading, setWeatherLoading] = useState(false);
+  const [weatherError, setWeatherError] = useState<string | null>(null);
   const [result, setResult] = useState<SearchResponse | null>(null);
   const [weather, setWeather] = useState<WeatherInfo | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const loadWeather = useCallback(async () => {
-    if (!navigator.geolocation) return;
+    if (!navigator.geolocation) {
+      setWeatherError("お使いのブラウザは位置情報をサポートしていません。");
+      return;
+    }
     
     setWeatherLoading(true);
+    setWeatherError(null);
+
+    const options = {
+      enableHighAccuracy: true,
+      timeout: 10000,
+      maximumAge: 0
+    };
+
     navigator.geolocation.getCurrentPosition(
       async (position) => {
         try {
@@ -58,16 +70,26 @@ const App: React.FC = () => {
             position.coords.longitude
           );
           setWeather(data);
+          setWeatherError(null);
         } catch (err) {
           console.error("Failed to load weather", err);
+          setWeatherError("天気の取得に失敗しました。");
         } finally {
           setWeatherLoading(false);
         }
       },
       (err) => {
         console.error("Geolocation error", err);
+        let msg = "位置情報の取得に失敗しました。";
+        if (err.code === err.PERMISSION_DENIED) {
+          msg = "位置情報の利用が拒否されました。設定を確認してください。";
+        } else if (err.code === err.TIMEOUT) {
+          msg = "位置情報の取得がタイムアウトしました。";
+        }
+        setWeatherError(msg);
         setWeatherLoading(false);
-      }
+      },
+      options
     );
   }, []);
 
@@ -191,15 +213,37 @@ const App: React.FC = () => {
             </div>
 
             {weatherLoading ? (
-              <div className="h-56 bg-slate-50 animate-pulse rounded-[40px] border border-slate-100"></div>
+              <div className="h-56 bg-white border border-slate-100 rounded-[40px] flex flex-col items-center justify-center gap-4 shadow-sm">
+                <div className="w-12 h-12 border-4 border-blue-50 border-t-[#0088ff] rounded-full animate-spin"></div>
+                <p className="text-slate-400 text-sm font-semibold animate-pulse">位置情報を取得中...</p>
+              </div>
             ) : (
               <div>
-                {weather ? (
+                {weatherError ? (
+                  <div className="text-center py-12 px-6 bg-white rounded-[40px] border border-dashed border-slate-200 shadow-sm">
+                    <div className="bg-slate-50 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4">
+                      <i className="fa-solid fa-location-dot text-slate-200 text-2xl"></i>
+                    </div>
+                    <p className="text-slate-500 text-sm font-semibold mb-6 max-w-[240px] mx-auto leading-relaxed">{weatherError}</p>
+                    <button 
+                      onClick={loadWeather}
+                      className="px-6 py-2.5 bg-slate-100 hover:bg-[#0088ff] hover:text-white text-slate-600 rounded-full text-xs font-black uppercase tracking-widest transition-all active:scale-95"
+                    >
+                      位置情報を再試行
+                    </button>
+                  </div>
+                ) : weather ? (
                   <WeatherCard weather={weather} />
                 ) : (
                   <div className="text-center py-16 bg-white rounded-[40px] border border-dashed border-slate-200">
                     <i className="fa-solid fa-location-arrow text-slate-200 text-4xl mb-4"></i>
-                    <p className="text-slate-400 text-sm font-semibold">位置情報をONにして現地の情報を取得</p>
+                    <p className="text-slate-400 text-sm font-semibold mb-4">位置情報をONにして現地の情報を取得</p>
+                    <button 
+                      onClick={loadWeather}
+                      className="px-8 py-3 search-gradient text-white rounded-full text-sm font-bold shadow-lg hover:scale-105 transition-all"
+                    >
+                      天気をチェック
+                    </button>
                   </div>
                 )}
               </div>
