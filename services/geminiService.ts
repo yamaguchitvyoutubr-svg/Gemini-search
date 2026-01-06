@@ -1,54 +1,76 @@
 
-import { GoogleGenAI, Type } from "@google/genai";
+import { GoogleGenAI } from "@google/genai";
 import { SearchResponse, WeatherInfo } from "../types";
+
+/**
+ * AIの応答からJSONを確実に抜き出すための超強力な抽出関数。
+ * 引用記号 [1] や、前後の余計なテキストを無視します。
+ */
+const extractJson = (text: string) => {
+  if (!text) throw new Error("AIからの応答が空でした。");
+
+  // Markdownのコードブロック記号を除去
+  let cleaned = text.replace(/```json\s?|```/g, "").trim();
+  
+  // 最初の '{' から最後の '}' までを最短一致ではなく最長一致で抜き出す
+  const start = cleaned.indexOf('{');
+  const end = cleaned.lastIndexOf('}');
+  
+  if (start === -1 || end === -1) {
+    console.error("No JSON found. Raw text:", text);
+    throw new Error("有効なデータが見つかりませんでした。");
+  }
+  
+  const jsonStr = cleaned.substring(start, end + 1);
+  
+  try {
+    return JSON.parse(jsonStr);
+  } catch (e) {
+    // 引用記号や改行、余計なカンマをよりアグレッシブに除去
+    try {
+      const sanitized = jsonStr
+        .replace(/\[\d+\]/g, '') // [1] のような引用を消す
+        .replace(/,\s*([}\]])/g, '$1'); // 末尾のカンマを消す
+      return JSON.parse(sanitized);
+    } catch (e2) {
+      console.error("Critical JSON Parse Error:", jsonStr);
+      throw new Error("情報の解析に失敗しました。もう一度お試しください。");
+    }
+  }
+};
 
 export const performSearch = async (query: string): Promise<SearchResponse> => {
   const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
   
   try {
     const response = await ai.models.generateContent({
-      model: "gemini-3-flash-preview",
-      contents: `
-        ユーザーの検索クエリ: 「${query}」
-        
-        【指示】
-        1. Google検索ツールを使用して、このクエリに直接関連するウェブサイトを検索してください。
-        2. 検索結果（groundingMetadata）に含まれる「実際のページ」の中から、最も関連性の高いものを抽出してください。
-        3. 出力するURLは、検索結果に存在する実際のURLと1文字も違わずに完全に一致させてください。捏造は絶対に禁止です。
-        
-        【厳格なルール】
-        - 検索結果に存在しないURLを生成しないでください。
-        - リンク切れを防ぐため、具体的な記事ページや詳細ページのURLを優先してください。
-      `,
+      model: "gemini-3-pro-preview",
+      contents: `検索クエリ: 「${query}」に関連する最新のウェブサイトを検索し、要約付きのJSONで返してください。`,
       config: {
+        systemInstruction: `
+          あなたは優秀な検索エンジンです。
+          Google Searchを使用して正確な結果を見つけ、以下のJSONのみを出力してください。
+          解説や引用記号は一切不要です。
+          
+          {
+            "results": [
+              {
+                "title": "タイトル",
+                "url": "完全なURL",
+                "summary": "日本語での2-3文の要約"
+              }
+            ]
+          }
+        `,
         tools: [{ googleSearch: {} }],
-        responseMimeType: "application/json",
-        responseSchema: {
-          type: Type.OBJECT,
-          properties: {
-            results: {
-              type: Type.ARRAY,
-              items: {
-                type: Type.OBJECT,
-                properties: {
-                  title: { type: Type.STRING },
-                  url: { type: Type.STRING },
-                  summary: { type: Type.STRING },
-                },
-                required: ["title", "url", "summary"],
-              },
-            },
-          },
-          required: ["results"],
-        },
+        temperature: 0,
       },
     });
 
-    const jsonStr = response.text || '{"results": []}';
-    return JSON.parse(jsonStr);
-  } catch (error) {
-    console.error("Gemini Search Error:", error);
-    throw new Error("検索結果の取得に失敗しました。");
+    return extractJson(response.text || '{"results": []}');
+  } catch (error: any) {
+    console.error("Search Error:", error);
+    throw new Error("検索中にエラーが発生しました。");
   }
 };
 
@@ -56,31 +78,42 @@ export const getWeatherAtLocation = async (lat: number, lng: number): Promise<We
   const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
   
   try {
+    // Google Mapsツールを使わずに、Google Searchのみで座標から場所と天気を特定するのが最も安定します
     const response = await ai.models.generateContent({
       model: "gemini-3-flash-preview",
-      contents: `緯度 ${lat}, 経度 ${lng} 付近の現在の天気をGoogle検索で調べて、以下のJSON形式で回答してください。地名は市区町村名まで特定してください。`,
+      contents: `緯度:${lat}, 経度:${lng} の地点を特定し、その場所の現在の天気、気温、最高/最低気温を取得してください。`,
       config: {
+        systemInstruction: `
+          あなたは気象情報botです。
+          Google Searchツールを使用して、与えられた座標の最新情報を検索してください。
+          必ず以下のJSONのみで回答し、他のテキストや引用[1]などは含めないでください。
+          
+          {
+            "location": "地名（例: 東京都千代田区）",
+            "temp": "気温（例: 20℃）",
+            "condition": "天気（例: 晴れ）",
+            "high": "最高気温",
+            "low": "最低気温",
+            "details": "今日のアドバイス"
+          }
+        `,
         tools: [{ googleSearch: {} }],
-        responseMimeType: "application/json",
-        responseSchema: {
-          type: Type.OBJECT,
-          properties: {
-            location: { type: Type.STRING, description: "場所の名前 (例: 東京都渋谷区)" },
-            temp: { type: Type.STRING, description: "現在の気温 (例: 18℃)" },
-            condition: { type: Type.STRING, description: "天気の概況 (例: 晴れ, 曇り, 雨)" },
-            high: { type: Type.STRING, description: "最高気温" },
-            low: { type: Type.STRING, description: "最低気温" },
-            details: { type: Type.STRING, description: "今日のアドバイス (例: 午後から雨が降るので傘が必要です)" },
-          },
-          required: ["location", "temp", "condition", "high", "low", "details"],
-        },
+        temperature: 0,
       },
     });
 
-    const jsonStr = response.text || "{}";
-    return JSON.parse(jsonStr);
-  } catch (error) {
-    console.error("Weather Fetch Error:", error);
-    throw new Error("天気の取得に失敗しました。");
+    const data = extractJson(response.text || "{}");
+    
+    return {
+      location: data.location || "不明な地点",
+      temp: data.temp || "--℃",
+      condition: data.condition || "取得中",
+      high: data.high || "--℃",
+      low: data.low || "--℃",
+      details: data.details || "データの取得に失敗しました。"
+    };
+  } catch (error: any) {
+    console.error("Weather Service Error:", error);
+    throw new Error("天気情報の取得に失敗しました。しばらくしてから再度お試しください。");
   }
 };

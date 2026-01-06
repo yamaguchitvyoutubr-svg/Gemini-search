@@ -12,22 +12,24 @@ export const WeatherCard: React.FC<WeatherCardProps> = ({ weather }) => {
     if (condition.includes('雨')) return 'fa-cloud-showers-heavy text-blue-400';
     if (condition.includes('曇')) return 'fa-cloud text-slate-400';
     if (condition.includes('雪')) return 'fa-snowflake text-sky-200';
+    if (condition.includes('雷')) return 'fa-cloud-bolt text-indigo-400';
     return 'fa-cloud-sun text-blue-300';
   };
 
   return (
-    <div className="bg-white border border-slate-100 rounded-[32px] p-8 shadow-sm hover:shadow-xl transition-all border-b-4 border-b-[#0088ff] overflow-hidden relative group">
-      <div className="absolute -right-6 -top-6 text-slate-50 opacity-10 text-[10rem] group-hover:scale-110 transition-transform duration-700">
+    <div className="bg-white border border-slate-100 rounded-[32px] p-8 shadow-sm hover:shadow-xl transition-all border-b-4 border-b-[#0088ff] overflow-hidden relative group animate-fade-in">
+      {/* Background Icon Decoration */}
+      <div className="absolute -right-6 -top-6 text-slate-50 opacity-10 text-[10rem] group-hover:scale-110 transition-transform duration-700 pointer-events-none">
         <i className={`fa-solid ${getWeatherIcon(weather.condition).split(' ')[0]}`}></i>
       </div>
       
       <div className="relative z-10">
         <div className="flex items-center gap-3 mb-6">
           <div className="bg-blue-50 text-[#0088ff] px-4 py-1.5 rounded-2xl text-[10px] font-black uppercase tracking-[0.15em]">
-            Now Trending
+            Live Observation
           </div>
-          <span className="text-slate-400 text-xs font-bold tracking-tight">
-            <i className="fa-solid fa-location-dot mr-2 text-[#0088ff]"></i>
+          <span className="text-slate-600 text-xs font-bold tracking-tight">
+            <i className="fa-solid fa-location-dot mr-2 text-[#0088ff] animate-bounce"></i>
             {weather.location}
           </span>
         </div>
@@ -42,15 +44,16 @@ export const WeatherCard: React.FC<WeatherCardProps> = ({ weather }) => {
               {weather.condition}
             </span>
             <div className="flex gap-3 text-xs font-bold mt-1">
-              <span className="text-red-400 bg-red-50 px-2 py-0.5 rounded-md">H: {weather.high}</span>
-              <span className="text-blue-400 bg-blue-50 px-2 py-0.5 rounded-md">L: {weather.low}</span>
+              <span className="text-red-500 bg-red-50 px-2.5 py-1 rounded-lg">最高 {weather.high}</span>
+              <span className="text-blue-500 bg-blue-50 px-2.5 py-1 rounded-lg">最低 {weather.low}</span>
             </div>
           </div>
         </div>
 
-        <div className="bg-slate-50 rounded-2xl p-4 border border-slate-100">
-          <p className="text-slate-500 text-sm leading-relaxed italic font-medium">
-            "{weather.details}"
+        <div className="bg-slate-50 rounded-2xl p-5 border border-slate-100/50 backdrop-blur-sm">
+          <p className="text-slate-600 text-sm leading-relaxed font-medium">
+            <i className="fa-solid fa-quote-left text-[#0088ff] opacity-20 mr-2 text-lg"></i>
+            {weather.details}
           </p>
         </div>
       </div>
