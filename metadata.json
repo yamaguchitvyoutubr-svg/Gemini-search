@@ -1,0 +1,7 @@
+{
+  "name": "Gemini Search Engine",
+  "description": "A modern search engine powered by Gemini with real-time web grounding, providing concise summaries and source links for every query.",
+  "requestFramePermissions": [
+    "geolocation"
+  ]
+}
