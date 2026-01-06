@@ -24,6 +24,7 @@ const App: React.FC = () => {
   const [query, setQuery] = useState('');
   const [loading, setLoading] = useState(false);
   const [weatherLoading, setWeatherLoading] = useState(false);
+  const [weatherError, setWeatherError] = useState<string | null>(null);
   const [result, setResult] = useState<SearchResponse | null>(null);
   const [weather, setWeather] = useState<WeatherInfo | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -34,7 +35,8 @@ const App: React.FC = () => {
   const [testStatus, setTestStatus] = useState<'idle' | 'testing' | 'success' | 'error'>('idle');
   const [isDark, setIsDark] = useState(() => {
     const saved = localStorage.getItem('theme');
-    return saved === 'dark' || (!saved && window.matchMedia('(prefers-color-scheme: dark)').matches);
+    if (saved) return saved === 'dark';
+    return window.matchMedia('(prefers-color-scheme: dark)').matches;
   });
 
   useEffect(() => {
@@ -48,25 +50,45 @@ const App: React.FC = () => {
   }, [isDark]);
 
   const loadWeather = useCallback(async () => {
-    if (!navigator.geolocation) return;
+    if (!navigator.geolocation) {
+      setWeatherError("お使いのブラウザは位置情報をサポートしていません。");
+      return;
+    }
+
     setWeatherLoading(true);
+    setWeatherError(null);
+
     navigator.geolocation.getCurrentPosition(
       async (pos) => {
         try {
           const data = await getWeatherAtLocation(pos.coords.latitude, pos.coords.longitude);
           setWeather(data);
-        } catch (e) {
+          setWeatherError(null);
+        } catch (e: any) {
           console.error(e);
+          setWeatherError(e.message || "天気の読み込みに失敗しました。");
         } finally {
           setWeatherLoading(false);
         }
       },
-      () => setWeatherLoading(false),
-      { timeout: 10000 }
+      (err) => {
+        console.error("Geolocation error:", err);
+        let msg = "位置情報を取得できませんでした。";
+        if (err.code === 1) msg = "位置情報の利用を許可してください。";
+        else if (err.code === 3) msg = "位置情報の取得がタイムアウトしました。";
+        setWeatherError(msg);
+        setWeatherLoading(false);
+      },
+      { timeout: 15000, enableHighAccuracy: false }
     );
   }, []);
 
-  useEffect(() => { loadWeather(); }, [loadWeather]);
+  useEffect(() => {
+    // APIキーがある場合のみ初期ロード
+    if (localStorage.getItem('GEMINI_API_KEY') || process.env.API_KEY) {
+      loadWeather();
+    }
+  }, [loadWeather]);
 
   const handleSearch = useCallback(async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
@@ -85,27 +107,41 @@ const App: React.FC = () => {
   }, [query]);
 
   const saveApiKey = async () => {
+    if (!apiKeyInput.trim()) {
+      localStorage.removeItem('GEMINI_API_KEY');
+      setShowSettings(false);
+      return;
+    }
     setTestStatus('testing');
     const isValid = await testApiKey(apiKeyInput);
     if (isValid) {
       localStorage.setItem('GEMINI_API_KEY', apiKeyInput);
       setTestStatus('success');
-      setTimeout(() => setShowSettings(false), 1000);
+      setTimeout(() => {
+        setShowSettings(false);
+        loadWeather(); // 保存後に天気を更新
+      }, 800);
     } else {
       setTestStatus('error');
     }
   };
 
+  const resetToHome = () => {
+    setResult(null);
+    setQuery('');
+    setError(null);
+  };
+
   return (
-    <div className="min-h-screen bg-[#fcfdfe] dark:bg-slate-950 transition-colors duration-500 flex flex-col items-center">
+    <div className="min-h-screen bg-[#fcfdfe] dark:bg-slate-950 transition-colors duration-500 flex flex-col items-center selection:bg-blue-100 dark:selection:bg-blue-900/40">
       {/* Settings Modal */}
       {showSettings && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm animate-fade-in">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-md animate-fade-in">
           <div className="bg-white dark:bg-slate-900 w-full max-w-md rounded-[32px] p-8 shadow-2xl border border-slate-100 dark:border-slate-800">
             <div className="flex justify-between items-center mb-8">
               <h2 className="text-xl font-bold text-slate-900 dark:text-white flex items-center gap-2">
                 <i className="fa-solid fa-gear text-blue-500"></i>
-                設定
+                システム設定
               </h2>
               <button onClick={() => setShowSettings(false)} className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200">
                 <i className="fa-solid fa-xmark text-xl"></i>
@@ -114,14 +150,14 @@ const App: React.FC = () => {
 
             <div className="space-y-8">
               {/* Theme Toggle */}
-              <div className="flex items-center justify-between p-4 bg-slate-50 dark:bg-slate-800/50 rounded-2xl">
+              <div className="flex items-center justify-between p-4 bg-slate-50 dark:bg-slate-800/50 rounded-2xl border border-slate-100 dark:border-slate-700">
                 <span className="font-bold text-slate-700 dark:text-slate-300">ダークモード</span>
                 <button 
                   onClick={() => setIsDark(!isDark)}
-                  className={`w-14 h-8 rounded-full p-1 transition-colors duration-300 ${isDark ? 'bg-blue-500' : 'bg-slate-300'}`}
+                  className={`w-14 h-8 rounded-full p-1 transition-colors duration-300 ${isDark ? 'bg-blue-600' : 'bg-slate-300'}`}
                 >
                   <div className={`w-6 h-6 bg-white rounded-full shadow-md transform transition-transform duration-300 ${isDark ? 'translate-x-6' : 'translate-x-0'} flex items-center justify-center`}>
-                    <i className={`fa-solid ${isDark ? 'fa-moon text-blue-500' : 'fa-sun text-amber-500'} text-[10px]`}></i>
+                    <i className={`fa-solid ${isDark ? 'fa-moon text-blue-600' : 'fa-sun text-amber-500'} text-[10px]`}></i>
                   </div>
                 </button>
               </div>
@@ -134,21 +170,25 @@ const App: React.FC = () => {
                     type="password"
                     value={apiKeyInput}
                     onChange={(e) => { setApiKeyInput(e.target.value); setTestStatus('idle'); }}
-                    placeholder="AI Studioから取得したキーを入力"
-                    className="w-full px-5 py-3.5 bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none transition-all dark:text-white text-sm"
+                    placeholder="AI Studioのキーを入力してください"
+                    className="w-full px-5 py-4 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none transition-all dark:text-white text-sm"
                   />
                   {testStatus === 'success' && <i className="fa-solid fa-circle-check text-green-500 absolute right-4 top-1/2 -translate-y-1/2"></i>}
                   {testStatus === 'error' && <i className="fa-solid fa-circle-xmark text-red-500 absolute right-4 top-1/2 -translate-y-1/2"></i>}
                 </div>
-                <p className="mt-2 text-[10px] text-slate-400 px-1 font-medium">キーはブラウザのローカルストレージにのみ保存されます。</p>
+                <p className="mt-3 text-[10px] text-slate-400 dark:text-slate-500 px-1 font-medium leading-relaxed">
+                  キーはブラウザに安全に保存されます。Vercel等で動作させる場合は、ここでキーを入力して保存してください。
+                </p>
               </div>
 
               <button 
                 onClick={saveApiKey}
                 disabled={testStatus === 'testing' || !apiKeyInput}
-                className={`w-full py-4 rounded-2xl font-bold text-white transition-all shadow-lg active:scale-95 ${testStatus === 'testing' ? 'bg-slate-400' : 'search-gradient hover:brightness-110'}`}
+                className={`w-full py-4 rounded-2xl font-black text-white transition-all shadow-lg active:scale-95 flex items-center justify-center gap-2 ${testStatus === 'testing' ? 'bg-slate-400' : 'search-gradient hover:brightness-110'}`}
               >
-                {testStatus === 'testing' ? <i className="fa-solid fa-spinner animate-spin"></i> : '設定を確認して保存'}
+                {testStatus === 'testing' ? (
+                  <><i className="fa-solid fa-spinner animate-spin"></i> 接続テスト中...</>
+                ) : '設定を保存する'}
               </button>
             </div>
           </div>
@@ -158,18 +198,18 @@ const App: React.FC = () => {
       {/* Header */}
       <header className={`w-full transition-all duration-500 flex flex-col items-center justify-center px-4 z-20 ${result || loading ? 'py-4 bg-white/80 dark:bg-slate-900/80 backdrop-blur-xl border-b border-slate-100 dark:border-slate-800 sticky top-0' : 'min-h-[40vh] pt-16'}`}>
         <div className="absolute right-6 top-6">
-          <button onClick={() => setShowSettings(true)} className="w-10 h-10 rounded-full flex items-center justify-center bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 hover:text-blue-500 transition-all shadow-sm">
+          <button onClick={() => setShowSettings(true)} className="w-10 h-10 rounded-full flex items-center justify-center bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 hover:text-blue-500 hover:bg-white dark:hover:bg-slate-700 transition-all shadow-sm">
             <i className="fa-solid fa-sliders text-sm"></i>
           </button>
         </div>
 
         <div className={`flex flex-col items-center w-full max-w-4xl transition-all duration-500 ${result || loading ? 'flex-row gap-6' : 'items-center'}`}>
-          <div onClick={() => {setResult(null); setQuery('');}} className={`flex items-center gap-4 cursor-pointer transition-transform ${result || loading ? 'scale-75 origin-left' : 'mb-12'}`}>
+          <div onClick={resetToHome} className={`flex items-center gap-4 cursor-pointer transition-transform ${result || loading ? 'scale-75 origin-left' : 'mb-12'}`}>
             <LogoIcon className="w-16 h-16" />
             {!(result || loading) && (
               <div className="flex flex-col">
-                <h1 className="text-4xl font-black text-slate-900 dark:text-white leading-none">Gemini</h1>
-                <h1 className="text-4xl font-black text-slate-900 dark:text-white leading-none mt-1">Search</h1>
+                <h1 className="text-4xl font-black text-slate-900 dark:text-white tracking-tight leading-none">Gemini</h1>
+                <h1 className="text-4xl font-black text-slate-900 dark:text-white tracking-tight leading-none mt-1">Search</h1>
               </div>
             )}
           </div>
@@ -181,7 +221,7 @@ const App: React.FC = () => {
               type="text"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              placeholder="気になることを検索..."
+              placeholder="気になることを質問してください..."
               className="w-full pl-14 pr-16 py-4 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-full shadow-sm hover:shadow-md focus:shadow-xl focus:border-blue-500 outline-none transition-all dark:text-white text-lg"
             />
             <button type="submit" disabled={loading} className="absolute right-2 top-1/2 -translate-y-1/2 w-12 h-12 search-gradient text-white rounded-full flex items-center justify-center shadow-lg hover:scale-105 active:scale-95 transition-all">
@@ -196,9 +236,11 @@ const App: React.FC = () => {
         {error && (
           <div className="bg-red-50 dark:bg-red-950/20 border border-red-100 dark:border-red-900/30 rounded-3xl p-8 text-center animate-fade-in">
             <i className="fa-solid fa-triangle-exclamation text-red-400 mb-4 text-3xl"></i>
-            <p className="text-red-700 dark:text-red-300 font-bold">{error}</p>
-            {!localStorage.getItem('GEMINI_API_KEY') && (
-              <button onClick={() => setShowSettings(true)} className="mt-4 text-sm text-blue-600 font-bold underline">APIキーを設定する</button>
+            <p className="text-red-700 dark:text-red-300 font-bold mb-4">{error}</p>
+            {error.includes("APIキー") && (
+              <button onClick={() => setShowSettings(true)} className="px-6 py-2 bg-blue-600 text-white rounded-full text-sm font-bold shadow-md hover:bg-blue-700 transition-all">
+                APIキーを設定
+              </button>
             )}
           </div>
         )}
@@ -207,21 +249,34 @@ const App: React.FC = () => {
           <div className="max-w-md mx-auto space-y-6">
             <div className="flex items-center justify-between px-2">
               <h2 className="text-slate-900 dark:text-white font-black flex items-center gap-2">
-                <i className="fa-solid fa-sun text-blue-500"></i>
-                TODAY
+                <i className="fa-solid fa-cloud-sun text-blue-500"></i>
+                LOCALE
               </h2>
-              <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Local Insight</span>
+              <button onClick={loadWeather} className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest hover:text-blue-500 transition-colors flex items-center gap-1">
+                <i className={`fa-solid fa-rotate-right ${weatherLoading ? 'animate-spin' : ''}`}></i>
+                Update
+              </button>
             </div>
+            
             {weatherLoading ? (
               <div className="bg-white dark:bg-slate-900 rounded-[32px] p-12 text-center border border-slate-100 dark:border-slate-800 shadow-sm">
-                <div className="w-8 h-8 border-3 border-blue-100 border-t-blue-500 rounded-full animate-spin mx-auto mb-4"></div>
-                <p className="text-slate-400 text-xs font-bold animate-pulse">WEATHER FETCHING...</p>
+                <div className="w-8 h-8 border-4 border-blue-50 dark:border-slate-800 border-t-blue-500 rounded-full animate-spin mx-auto mb-4"></div>
+                <p className="text-slate-400 text-xs font-bold animate-pulse">気象情報を検索中...</p>
+              </div>
+            ) : weatherError ? (
+              <div className="bg-white dark:bg-slate-900 rounded-[32px] p-10 text-center border border-dashed border-slate-200 dark:border-slate-800">
+                <i className="fa-solid fa-location-dot text-slate-200 dark:text-slate-700 text-2xl mb-4"></i>
+                <p className="text-slate-500 dark:text-slate-400 text-sm mb-6">{weatherError}</p>
+                <button onClick={loadWeather} className="px-6 py-2 bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 rounded-full text-xs font-bold hover:bg-blue-100 transition-all">
+                  位置情報を再取得
+                </button>
               </div>
             ) : weather ? (
               <WeatherCard weather={weather} />
             ) : (
-              <button onClick={loadWeather} className="w-full py-8 bg-white dark:bg-slate-900 rounded-[32px] border-2 border-dashed border-slate-200 dark:border-slate-800 text-slate-400 font-bold hover:border-blue-200 transition-all">
-                位置情報から天気を表示
+              <button onClick={loadWeather} className="w-full py-12 bg-white dark:bg-slate-900 rounded-[32px] border-2 border-dashed border-slate-200 dark:border-slate-800 text-slate-400 dark:text-slate-600 font-bold hover:border-blue-200 dark:hover:border-blue-900/40 transition-all group">
+                <i className="fa-solid fa-location-arrow mb-3 text-2xl group-hover:scale-110 transition-transform"></i>
+                <div className="text-sm">位置情報から天気を表示</div>
               </button>
             )}
           </div>
@@ -229,10 +284,19 @@ const App: React.FC = () => {
 
         {result && (
           <div className="animate-fade-in space-y-4 pb-20">
+            <div className="px-4 mb-2">
+              <span className="text-slate-400 dark:text-slate-500 text-[10px] font-black uppercase tracking-[0.2em]">
+                Found Insights
+              </span>
+            </div>
             {result.results.map((item, index) => <ResultCard key={index} {...item} />)}
           </div>
         )}
       </main>
+      
+      <footer className="mt-auto py-8 text-slate-400 dark:text-slate-600 text-[10px] font-bold text-center uppercase tracking-widest">
+        &copy; 2025 Gemini Web Engine • Secure Search
+      </footer>
     </div>
   );
 };
