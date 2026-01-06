@@ -3,60 +3,65 @@ import { GoogleGenAI } from "@google/genai";
 import { SearchResponse, WeatherInfo } from "../types";
 
 /**
- * AIの応答からJSONを確実に抜き出すための超強力な抽出関数。
- * 引用記号 [1] や、前後の余計なテキストを無視します。
+ * 有効なAPIキーを取得します。
+ * localStorage に保存されたカスタムキーがあればそれを優先し、なければ環境変数を使用します。
+ */
+const getApiKey = () => {
+  const customKey = localStorage.getItem('GEMINI_API_KEY');
+  return customKey || process.env.API_KEY || "";
+};
+
+/**
+ * 応答テキストからJSONを確実に抽出する関数。
  */
 const extractJson = (text: string) => {
   if (!text) throw new Error("AIからの応答が空でした。");
-
-  // Markdownのコードブロック記号を除去
   let cleaned = text.replace(/```json\s?|```/g, "").trim();
-  
-  // 最初の '{' から最後の '}' までを最短一致ではなく最長一致で抜き出す
   const start = cleaned.indexOf('{');
   const end = cleaned.lastIndexOf('}');
-  
-  if (start === -1 || end === -1) {
-    console.error("No JSON found. Raw text:", text);
-    throw new Error("有効なデータが見つかりませんでした。");
-  }
-  
+  if (start === -1 || end === -1) throw new Error("有効なデータが見つかりませんでした。");
   const jsonStr = cleaned.substring(start, end + 1);
-  
   try {
-    return JSON.parse(jsonStr);
+    return JSON.parse(jsonStr.replace(/\[\d+\]/g, '').replace(/,\s*([}\]])/g, '$1'));
   } catch (e) {
-    // 引用記号や改行、余計なカンマをよりアグレッシブに除去
-    try {
-      const sanitized = jsonStr
-        .replace(/\[\d+\]/g, '') // [1] のような引用を消す
-        .replace(/,\s*([}\]])/g, '$1'); // 末尾のカンマを消す
-      return JSON.parse(sanitized);
-    } catch (e2) {
-      console.error("Critical JSON Parse Error:", jsonStr);
-      throw new Error("情報の解析に失敗しました。もう一度お試しください。");
-    }
+    throw new Error("データの解析に失敗しました。");
+  }
+};
+
+/**
+ * APIキーの有効性を確認するための軽量なテスト。
+ */
+export const testApiKey = async (key: string): Promise<boolean> => {
+  const ai = new GoogleGenAI({ apiKey: key });
+  try {
+    await ai.models.generateContent({
+      model: "gemini-3-flash-preview",
+      contents: "hi",
+      config: { maxOutputTokens: 1 }
+    });
+    return true;
+  } catch (e) {
+    return false;
   }
 };
 
 export const performSearch = async (query: string): Promise<SearchResponse> => {
-  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+  const apiKey = getApiKey();
+  if (!apiKey) throw new Error("APIキーが設定されていません。設定から入力してください。");
   
+  const ai = new GoogleGenAI({ apiKey });
   try {
     const response = await ai.models.generateContent({
       model: "gemini-3-pro-preview",
-      contents: `検索クエリ: 「${query}」に関連する最新のウェブサイトを検索し、要約付きのJSONで返してください。`,
+      contents: `クエリ: 「${query}」に関連する最新のウェブサイトを検索し、要約付きのJSONで返してください。`,
       config: {
         systemInstruction: `
-          あなたは優秀な検索エンジンです。
-          Google Searchを使用して正確な結果を見つけ、以下のJSONのみを出力してください。
-          解説や引用記号は一切不要です。
-          
+          あなたはプロの検索エンジンです。Google Searchを使用して正確な結果を見つけ、以下のJSONのみを出力してください。
           {
             "results": [
               {
                 "title": "タイトル",
-                "url": "完全なURL",
+                "url": "URL",
                 "summary": "日本語での2-3文の要約"
               }
             ]
@@ -66,54 +71,48 @@ export const performSearch = async (query: string): Promise<SearchResponse> => {
         temperature: 0,
       },
     });
-
     return extractJson(response.text || '{"results": []}');
   } catch (error: any) {
     console.error("Search Error:", error);
-    throw new Error("検索中にエラーが発生しました。");
+    throw new Error(error.message?.includes("API_KEY_INVALID") ? "APIキーが無効です。" : "検索中にエラーが発生しました。");
   }
 };
 
 export const getWeatherAtLocation = async (lat: number, lng: number): Promise<WeatherInfo> => {
-  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-  
+  const apiKey = getApiKey();
+  if (!apiKey) throw new Error("APIキー未設定");
+
+  const ai = new GoogleGenAI({ apiKey });
   try {
-    // Google Mapsツールを使わずに、Google Searchのみで座標から場所と天気を特定するのが最も安定します
     const response = await ai.models.generateContent({
       model: "gemini-3-flash-preview",
-      contents: `緯度:${lat}, 経度:${lng} の地点を特定し、その場所の現在の天気、気温、最高/最低気温を取得してください。`,
+      contents: `座標(${lat}, ${lng})の地点を特定し、その場所の現在の天気、気温、最高/最低気温を取得してください。`,
       config: {
         systemInstruction: `
-          あなたは気象情報botです。
-          Google Searchツールを使用して、与えられた座標の最新情報を検索してください。
-          必ず以下のJSONのみで回答し、他のテキストや引用[1]などは含めないでください。
-          
+          気象情報botです。Google Searchを使用して座標の最新情報を検索し、以下のJSONのみで回答してください。
           {
-            "location": "地名（例: 東京都千代田区）",
-            "temp": "気温（例: 20℃）",
-            "condition": "天気（例: 晴れ）",
+            "location": "地名",
+            "temp": "気温",
+            "condition": "天気",
             "high": "最高気温",
             "low": "最低気温",
-            "details": "今日のアドバイス"
+            "details": "アドバイス"
           }
         `,
         tools: [{ googleSearch: {} }],
         temperature: 0,
       },
     });
-
     const data = extractJson(response.text || "{}");
-    
     return {
-      location: data.location || "不明な地点",
+      location: data.location || "現在地",
       temp: data.temp || "--℃",
       condition: data.condition || "取得中",
       high: data.high || "--℃",
       low: data.low || "--℃",
-      details: data.details || "データの取得に失敗しました。"
+      details: data.details || "データを取得できませんでした。"
     };
   } catch (error: any) {
-    console.error("Weather Service Error:", error);
-    throw new Error("天気情報の取得に失敗しました。しばらくしてから再度お試しください。");
+    throw new Error("天気情報の取得に失敗しました。");
   }
 };

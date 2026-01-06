@@ -6,34 +6,40 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Gemini Search Engine</title>
     <script src="https://cdn.tailwindcss.com?plugins=typography"></script>
+    <script>
+      tailwind.config = {
+        darkMode: 'class',
+      }
+    </script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <style>
-        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap');
         body {
             font-family: 'Inter', sans-serif;
-            background-color: #fcfdfe;
         }
         .search-gradient {
-            background: linear-gradient(135deg, #0088ff 0%, #00e5ff 100%);
+            background: linear-gradient(135deg, #3b82f6 0%, #06b6d4 100%);
         }
-        .text-brand-gradient {
-            background: linear-gradient(135deg, #0066cc 0%, #00aacc 100%);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
+        .animate-fade-in {
+            animation: fadeIn 0.4s ease-out;
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
         }
         /* Custom scrollbar */
         ::-webkit-scrollbar {
-            width: 8px;
+            width: 6px;
         }
         ::-webkit-scrollbar-track {
-            background: #f1f5f9;
+            background: transparent;
         }
         ::-webkit-scrollbar-thumb {
             background: #cbd5e1;
             border-radius: 10px;
         }
-        ::-webkit-scrollbar-thumb:hover {
-            background: #94a3b8;
+        .dark ::-webkit-scrollbar-thumb {
+            background: #334155;
         }
     </style>
 <script type="importmap">
@@ -49,7 +55,7 @@
 }
 </script>
 </head>
-<body>
+<body class="bg-[#fcfdfe] dark:bg-slate-950 transition-colors duration-500">
     <div id="root"></div>
     <script type="module" src="/index.tsx"></script>
 </body>
